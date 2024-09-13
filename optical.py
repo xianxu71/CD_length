@@ -203,9 +203,14 @@ def calculate_epsR_epsL_noeh(main_class):
     energy_shift=main_class.energy_shift
     volume = main_class.volume
     nk = main_class.nk
+    if main_class.length_gauge:
+        nk = int(nk/7)
     W = main_class.W
     E_kvc = main_class.E_kvc
-    L_kvc = main_class.L_kvc
+    if main_class.length_gauge:
+        L_kvc = main_class.L_kvc_length
+    else:
+        L_kvc = main_class.L_kvc
     if main_class.use_spin:
         L_kvc += main_class.S_kvc*2
     nv = main_class.nv

@@ -36,7 +36,7 @@ class reader:
     def read_dipole(self, main_class):
         input_file = main_class.input_folder + 'dipole_matrix.h5'
         f = h5.File(input_file, 'r')
-        main_class.temp = f['dipole'][()]
+        #main_class.temp = f['dipole'][()]
         main_class.noeh_dipole = f['dipole'][:, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc,
                                  main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
 

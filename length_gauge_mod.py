@@ -43,18 +43,13 @@ def get_index(hash_table, arrays):
     return new_index
 
 def wfn_derivative(main_class):
-    hovb = main_class.hovb
-    nv = main_class.nv
-    nc = main_class.nc
     dk = main_class.dk
     wfn_file_name = main_class.input_folder + 'wfn.h5'
     wfn_file = h5.File(wfn_file_name, 'r')
-    a = main_class.a
+    a = wfn_file['/mf_header/crystal/alat'][()] * wfn_file['/mf_header/crystal/avec'][()] * 0.52917
     bdot = main_class.bdot
     nk = main_class.nk
     nb_all = main_class.nc_in_file+main_class.nv_in_file
-    energy = wfn_file['mf_header/kpoints/el']
-    rk = wfn_file['mf_header/kpoints/rk'][()]
 
     nk_sub = int(nk/7)
     dipole_matrix = np.zeros([nk_sub, nb_all, nb_all, 3], dtype=np.complex128)
@@ -220,6 +215,387 @@ def wfn_derivative(main_class):
     main_class.invS_yn = invS_yn
     main_class.invS_zp = invS_zp
     main_class.invS_zn = invS_zn
-    main_class.noeh_dipole_length = dipole_matrix_xyz[:, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc,
-                             main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    # main_class.noeh_dipole_length = dipole_matrix_xyz[:, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc,
+    #                          main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
     return 0
+
+def Ddipole(main_class):
+    dk = main_class.dk
+    wfn_file_name = main_class.input_folder + 'wfn.h5'
+    wfn_file = h5.File(wfn_file_name, 'r')
+    bdot = main_class.bdot
+    nb_all = main_class.nc_in_file + main_class.nv_in_file
+    a = wfn_file['/mf_header/crystal/alat'][()] * wfn_file['/mf_header/crystal/avec'][()] * 0.52917
+    energy = wfn_file['mf_header/kpoints/el'][()]
+    rk = wfn_file['mf_header/kpoints/rk'][()]
+
+    nk_sub = int(main_class.nk / 7)
+
+    xi_x = main_class.berry_phase[:, :, :, 0]
+    xi_y = main_class.berry_phase[:, :, :, 1]
+    xi_z = main_class.berry_phase[:, :, :, 2]
+
+    invS_xp = main_class.invS_xp
+    invS_xn = main_class.invS_xn
+    invS_yp = main_class.invS_yp
+    invS_yn = main_class.invS_yn
+    invS_zp = main_class.invS_zp
+    invS_zn = main_class.invS_zn
+
+    input_file_dipole = main_class.input_folder + 'dipole_matrix.h5'
+    f_dipole = h5.File(input_file_dipole, 'r')
+
+    dipole_0 = f_dipole['dipole'][0*nk_sub:1*nk_sub, :, :, :]
+    dipole_xp = f_dipole['dipole'][1 * nk_sub:2 * nk_sub, :, :, :]
+    dipole_xn = f_dipole['dipole'][2 * nk_sub:3 * nk_sub, :, :, :]
+    dipole_yp = f_dipole['dipole'][3 * nk_sub:4 * nk_sub, :, :, :]
+    dipole_yn = f_dipole['dipole'][4 * nk_sub:5 * nk_sub, :, :, :]
+    dipole_zp = f_dipole['dipole'][5 * nk_sub:6 * nk_sub, :, :, :]
+    dipole_zn = f_dipole['dipole'][6 * nk_sub:7 * nk_sub, :, :, :]
+
+    datax = dipole_0[:, :, :, 0]
+    datay = dipole_0[:, :, :, 1]
+    dataz = dipole_0[:, :, :, 2]
+
+    L = np.zeros([nk_sub, nb_all, nb_all, 3], dtype=np.complex)
+
+    totx = np.einsum('kam,kmb-> kab', xi_y, dataz) - np.einsum('kam,kmb-> kab', xi_z, datay)
+    toty = np.einsum('kam,kmb-> kab', xi_z, datax) - np.einsum('kam,kmb-> kab', xi_x, dataz)
+    totz = np.einsum('kam,kmb-> kab', xi_x, datay) - np.einsum('kam,kmb-> kab', xi_y, datax)
+
+    energy = wfn_file['mf_header/kpoints/el'][0, 0:nk_sub, :]
+    Ekm = np.einsum('km,v->kvm', energy, np.ones(nb_all))
+    Ekv = np.einsum('kv,m->kvm', energy, np.ones(nb_all))
+    energy_diff = (Ekm - Ekv)
+    # degeneracy_remover = 0.00000001
+    # with np.errstate(divide='ignore'):
+    #     energy_diff_inverse = 1 / energy_diff
+    #     energy_diff_inverse[abs(energy_diff) < degeneracy_remover] = 0
+    # totx = np.einsum('kam,kam,kmb-> kab', datay, energy_diff_inverse,
+    #                  dataz) - \
+    #        np.einsum('kam,kam,kmb-> kab', dataz, energy_diff_inverse,
+    #                  datay)
+    # toty = np.einsum('kam,kam,kmb-> kab', dataz, energy_diff_inverse,
+    #                  datax) - \
+    #        np.einsum('kam,kam,kmb-> kab', datax, energy_diff_inverse,
+    #                  dataz)
+    # totz = np.einsum('kam,kam,kmb-> kab', datax, energy_diff_inverse,
+    #                  datay) - \
+    #        np.einsum('kam,kam,kmb-> kab', datay, energy_diff_inverse,
+    #                  datax)
+
+    # totx = np.einsum('kam,kmb,kmb-> kab', xi_y, energy_diff,xi_z) - np.einsum('kam,kmb,kmb-> kab', xi_z, energy_diff,xi_y)
+    # toty = np.einsum('kam,kmb,kmb-> kab', xi_z, energy_diff,xi_x) - np.einsum('kam,kmb,kmb-> kab', xi_x, energy_diff,xi_z)
+    # totz = np.einsum('kam,kmb,kmb-> kab', xi_x, energy_diff,xi_y) - np.einsum('kam,kmb,kmb-> kab', xi_y, energy_diff,xi_x)
+
+
+    totx_intra = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    toty_intra = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    totz_intra = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+
+    Ddipole_x_b1 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_x_b2 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_x_b3 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+
+    Ddipole_y_b1 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_y_b2 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_y_b3 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+
+    Ddipole_z_b1 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_z_b2 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+    Ddipole_z_b3 = np.zeros([nk_sub, nb_all, nb_all], dtype=np.complex)
+
+    for ik in range(nk_sub):
+        Ddipole_x_b1[ik, :, :] = ((invS_xp[ik, :, :].T.conj()) @ dipole_xp[ik, :, :, 0] @ (invS_xp[ik, :, :])
+                                  - (invS_xn[ik, :, :].T.conj()) @ dipole_xn[ik, :, :, 0] @ (
+                                  invS_xn[ik, :, :])) / np.sqrt(bdot[0, 0]) / dk / 2
+
+        Ddipole_x_b2[ik, :, :] = ((invS_yp[ik, :, :].T.conj()) @ dipole_yp[ik, :, :, 0] @ (invS_yp[ik, :, :])
+                                  - (invS_yn[ik, :, :].T.conj()) @ dipole_yn[ik, :, :, 0] @ (
+                                  invS_yn[ik, :, :])) / np.sqrt(bdot[1, 1]) / dk / 2
+
+        Ddipole_x_b3[ik, :, :] = ((invS_zp[ik, :, :].T.conj()) @ dipole_zp[ik, :, :, 0] @ (invS_zp[ik, :, :])
+                                  - (invS_zn[ik, :, :].T.conj()) @ dipole_zn[ik, :, :, 0] @ (
+                                  invS_zn[ik, :, :])) / np.sqrt(bdot[2, 2]) / dk / 2
+
+        Ddipole_y_b1[ik, :, :] = ((invS_xp[ik, :, :].T.conj()) @ dipole_xp[ik, :, :, 1] @ (invS_xp[ik, :, :])
+                                  - (invS_xn[ik, :, :].T.conj()) @ dipole_xn[ik, :, :, 1] @ (
+                                  invS_xn[ik, :, :])) / np.sqrt(bdot[0, 0]) / dk / 2
+
+        Ddipole_y_b2[ik, :, :] = ((invS_yp[ik, :, :].T.conj()) @ dipole_yp[ik, :, :, 1] @ (invS_yp[ik, :, :])
+                                  - (invS_yn[ik, :, :].T.conj()) @ dipole_yn[ik, :, :, 1] @ (
+                                  invS_yn[ik, :, :])) / np.sqrt(bdot[1, 1]) / dk / 2
+
+        Ddipole_y_b3[ik, :, :] = ((invS_zp[ik, :, :].T.conj()) @ dipole_zp[ik, :, :, 1] @ (invS_zp[ik, :, :])
+                                  - (invS_zn[ik, :, :].T.conj()) @ dipole_zn[ik, :, :, 1] @ (
+                                  invS_zn[ik, :, :])) / np.sqrt(bdot[2, 2]) / dk / 2
+
+        Ddipole_z_b1[ik, :, :] = ((invS_xp[ik, :, :].T.conj()) @ dipole_xp[ik, :, :, 2] @ (invS_xp[ik, :, :])
+                                  - (invS_xn[ik, :, :].T.conj()) @ dipole_xn[ik, :, :, 2] @ (
+                                  invS_xn[ik, :, :])) / np.sqrt(bdot[0, 0]) / dk / 2
+
+        Ddipole_z_b2[ik, :, :] = ((invS_yp[ik, :, :].T.conj()) @ dipole_yp[ik, :, :, 2] @ (invS_yp[ik, :, :])
+                                  - (invS_yn[ik, :, :].T.conj()) @ dipole_yn[ik, :, :, 2] @ (
+                                  invS_yn[ik, :, :])) / np.sqrt(bdot[1, 1]) / dk / 2
+
+        Ddipole_z_b3[ik, :, :] = ((invS_zp[ik, :, :].T.conj()) @ dipole_zp[ik, :, :, 2] @ (invS_zp[ik, :, :])
+                                  - (invS_zn[ik, :, :].T.conj()) @ dipole_zn[ik, :, :, 2] @ (
+                                  invS_zn[ik, :, :])) / np.sqrt(bdot[2, 2]) / dk / 2
+
+    Ddipole_x_x, Ddipole_x_y, Ddipole_x_z = b123_to_xyz(a, Ddipole_x_b1, Ddipole_x_b2, Ddipole_x_b3)
+    Ddipole_y_x, Ddipole_y_y, Ddipole_y_z = b123_to_xyz(a, Ddipole_y_b1, Ddipole_y_b2, Ddipole_y_b3)
+    Ddipole_z_x, Ddipole_z_y, Ddipole_z_z = b123_to_xyz(a, Ddipole_z_b1, Ddipole_z_b2, Ddipole_z_b3)
+
+    totx_intra = 1j * Ddipole_z_y - 1j * Ddipole_y_z
+    toty_intra = 1j * Ddipole_x_z - 1j * Ddipole_z_x
+    totz_intra = 1j * Ddipole_y_x - 1j * Ddipole_x_y
+
+    fact0 = 1
+    fact = 1
+
+
+    L[:, :, :, 0] = fact0*totx + totx_intra * fact
+    L[:, :, :, 1] = fact0*toty + toty_intra * fact
+    L[:, :, :, 2] = fact0*totz + totz_intra * fact
+
+    main_class.L_length = L
+
+
+    wfn_file.close()
+    f_dipole.close()
+    return 0
+
+def Avck_derivative(main_class):
+    dk = main_class.dk
+    nv = main_class.nv
+    nc = main_class.nc
+    hovb = main_class.hovb
+    wfn_file_name = main_class.input_folder + 'wfn.h5'
+    wfn_file = h5.File(wfn_file_name, 'r')
+    bdot = main_class.bdot
+    nb_all = main_class.nc_in_file + main_class.nv_in_file
+    a = wfn_file['/mf_header/crystal/alat'][()] * wfn_file['/mf_header/crystal/avec'][()] * 0.52917
+    energy = wfn_file['mf_header/kpoints/el'][()]
+    rk = wfn_file['mf_header/kpoints/rk'][()]
+
+    nk_sub = int(main_class.nk / 7)
+
+    input_file_dipole = main_class.input_folder + 'dipole_matrix.h5'
+    f_dipole = h5.File(input_file_dipole, 'r')
+
+    dipole_0 = f_dipole['dipole'][0*nk_sub:1*nk_sub, :, :, :]
+    dipole_xp = f_dipole['dipole'][1 * nk_sub:2 * nk_sub, :, :, :]
+    dipole_xn = f_dipole['dipole'][2 * nk_sub:3 * nk_sub, :, :, :]
+    dipole_yp = f_dipole['dipole'][3 * nk_sub:4 * nk_sub, :, :, :]
+    dipole_yn = f_dipole['dipole'][4 * nk_sub:5 * nk_sub, :, :, :]
+    dipole_zp = f_dipole['dipole'][5 * nk_sub:6 * nk_sub, :, :, :]
+    dipole_zn = f_dipole['dipole'][6 * nk_sub:7 * nk_sub, :, :, :]
+
+    invS_xp = main_class.invS_xp
+    invS_xn = main_class.invS_xn
+    invS_yp = main_class.invS_yp
+    invS_yn = main_class.invS_yn
+    invS_zp = main_class.invS_zp
+    invS_zn = main_class.invS_zn
+
+    invS_xp_v = invS_xp[:, hovb-nv:hovb, hovb-nv:hovb]
+    invS_xn_v = invS_xn[:, hovb - nv:hovb, hovb - nv:hovb]
+    invS_yp_v = invS_yp[:, hovb-nv:hovb, hovb-nv:hovb]
+    invS_yn_v = invS_yn[:, hovb - nv:hovb, hovb - nv:hovb]
+    invS_zp_v = invS_zp[:, hovb-nv:hovb, hovb-nv:hovb]
+    invS_zn_v = invS_zn[:, hovb - nv:hovb, hovb - nv:hovb]
+
+    invS_xp_c = invS_xp[:, hovb:hovb+nc, hovb:hovb+nc]
+    invS_xn_c = invS_xn[:, hovb:hovb + nc, hovb:hovb + nc]
+    invS_yp_c = invS_yp[:, hovb:hovb + nc, hovb:hovb + nc]
+    invS_yn_c = invS_yn[:, hovb:hovb + nc, hovb:hovb + nc]
+    invS_zp_c = invS_zp[:, hovb:hovb + nc, hovb:hovb + nc]
+    invS_zn_c = invS_zn[:, hovb:hovb + nc, hovb:hovb + nc]
+
+
+    avck_0 = main_class.avck[0*nk_sub:1*nk_sub,:,:,:]   #kvcs
+    avck_xp = main_class.avck[1 * nk_sub:2 * nk_sub, :, :, :]
+    avck_xn = main_class.avck[2 * nk_sub:3 * nk_sub, :, :, :]
+    avck_yp = main_class.avck[3 * nk_sub:4 * nk_sub, :, :, :]
+    avck_yn = main_class.avck[4 * nk_sub:5 * nk_sub, :, :, :]
+    avck_zp = main_class.avck[5 * nk_sub:6 * nk_sub, :, :, :]
+    avck_zn = main_class.avck[6 * nk_sub:7 * nk_sub, :, :, :]
+
+    Davck_x = (avck_xp-avck_xn) / np.sqrt(bdot[0, 0]) / dk / 2
+    Davck_y = (avck_yp - avck_yn) / np.sqrt(bdot[1, 1]) / dk / 2
+    Davck_z = (avck_zp - avck_zn) / np.sqrt(bdot[2, 2]) / dk / 2
+
+    Davck_x_2 = np.zeros_like(Davck_x)
+    idx = list(range(main_class.nv - 1, -1, -1))
+    inds = np.ix_(range(nk_sub), idx, range(main_class.nc), range(main_class.nxct))
+    avck_xp = avck_xp[inds]
+    avck_xn = avck_xn[inds]
+    test01 = np.zeros([nk_sub, 4, 8], dtype=np.complex)
+    test02 = np.zeros([nk_sub, 4, 8], dtype=np.complex)
+    test1 = np.zeros_like(Davck_x)
+    test2 = np.zeros_like(Davck_x)
+
+    Ddipole_x_b1 = np.zeros([nk_sub, 4, 8], dtype=np.complex)
+
+
+    for ik in range(nk_sub):
+        Ddipole_x_b1[ik, :, :] = ((invS_xp_v[ik, :, :].T.conj()) @ dipole_xp[ik, hovb - nv:hovb, hovb:hovb + nc, 0] @ (invS_xp_c[ik, :, :])
+                                  - (invS_xn_v[ik, :, :].T.conj()) @ dipole_xn[ik, hovb - nv:hovb, hovb:hovb + nc, 0] @ (
+                                  invS_xn_c[ik, :, :])) / np.sqrt(bdot[0, 0]) / dk / 2
+        test01[ik, :, :] = (invS_xp_v[ik, :, :].T.conj()) @ dipole_xp[ik, hovb - nv:hovb, hovb:hovb + nc, 0] @ (invS_xp_c[ik, :, :])
+        test02[ik, :, :] = invS_xn_v[ik, :, :].T.conj() @ dipole_xn[ik, hovb - nv:hovb, hovb:hovb + nc, 0] @ (invS_xn_c[ik, :, :])
+
+
+
+    for ist in range(main_class.nxct):
+        for ik in range(nk_sub):
+            Davck_x_2[ik, :, :, ist] = (invS_xp_v[ik, :, :].T.conj() @ (avck_xp[ik, :, :, ist]) @ (
+                invS_xp_c[ik, :, :]) - invS_xn_v[ik, :, :].T.conj() @ (avck_xn[ik, :, :, ist]) @ (
+                                           invS_xn_c[ik, :, :])) / np.sqrt(bdot[0, 0]) / dk / 2
+            test1[ik,:,:,ist] = (invS_xp_v[ik, :, :]) @ (avck_xp[ik, :, :, ist]) @ (invS_xp_c[ik, :, :].T.conj())
+            test2[ik, :, :, ist] = (invS_xn_v[ik, :, :]) @ (avck_xn[ik, :, :, ist]) @ (invS_xn_c[ik, :, :].T.conj())
+    test11 = np.einsum('kvcs,kvc->ks', avck_xp, dipole_xp[:, hovb - nv:hovb, hovb:hovb + nc, 0])
+    test22 = np.einsum('kvcs,kvc->ks', avck_xn, dipole_xn[:, hovb - nv:hovb, hovb:hovb + nc, 0])
+
+    new1 = np.einsum('kvcs,kvc->ks',test1, test01)
+    new2 = np.einsum('kvcs,kvc->ks',test2, test02)
+
+    result11 = np.sum(test11[:,:])
+    result22 = np.sum(test22[:,:])
+
+    result11_new = np.sum(new1)
+    result22_new = np.sum(new2)
+
+    #print((invS_xp_v[0, :, :].T.conj())@invS_xp_v[0, :, :])
+
+
+
+
+    print('test')
+    wfn_file.close()
+    f_dipole.close()
+
+def Avck_derivative2(main_class):
+    dk = main_class.dk
+    nv = main_class.nv
+    nc = main_class.nc
+    hovb = main_class.hovb
+    wfn_file_name = main_class.input_folder + 'wfn.h5'
+    wfn_file = h5.File(wfn_file_name, 'r')
+    bdot = main_class.bdot
+    nb_all = main_class.nc_in_file + main_class.nv_in_file
+    a = wfn_file['/mf_header/crystal/alat'][()] * wfn_file['/mf_header/crystal/avec'][()] * 0.52917
+    energy = wfn_file['mf_header/kpoints/el'][()]
+    rk = wfn_file['mf_header/kpoints/rk'][()]
+
+    nk_sub = int(main_class.nk / 7)
+
+    input_file_dipole = main_class.input_folder + 'dipole_matrix.h5'
+    f_dipole = h5.File(input_file_dipole, 'r')
+
+    dipole_0 = f_dipole['dipole'][0*nk_sub:1*nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_xp = f_dipole['dipole'][1 * nk_sub:2 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_xn = f_dipole['dipole'][2 * nk_sub:3 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_yp = f_dipole['dipole'][3 * nk_sub:4 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_yn = f_dipole['dipole'][4 * nk_sub:5 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_zp = f_dipole['dipole'][5 * nk_sub:6 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+    dipole_zn = f_dipole['dipole'][6 * nk_sub:7 * nk_sub, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, main_class.nv_in_file - main_class.nv:main_class.nv_in_file + main_class.nc, :]
+
+
+
+    energy = main_class.energy_dft
+    newE_0 = np.zeros_like(dipole_0)
+    newE_xp = np.zeros_like(dipole_0)
+    newE_xn = np.zeros_like(dipole_0)
+    newE_yp = np.zeros_like(dipole_0)
+    newE_yn = np.zeros_like(dipole_0)
+    newE_zp = np.zeros_like(dipole_0)
+    newE_zn = np.zeros_like(dipole_0)
+
+    for ik in range(nk_sub):
+        for ib1 in range(main_class.nv + main_class.nc):
+            for ib2 in range(main_class.nv + main_class.nc):
+                energy_diff_for_cancel_diple = energy[ik, ib1] - energy[
+                    ik, ib2]
+                if np.abs(energy_diff_for_cancel_diple) > 0.0000001:
+                    energy_diff_for_cancel_diple_inv = 1 / energy_diff_for_cancel_diple
+                else:
+                    energy_diff_for_cancel_diple_inv = 0
+
+                newE_0[ik, ib1, ib2, :] = dipole_0[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_xp[ik, ib1, ib2, :] = dipole_xp[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_xn[ik, ib1, ib2, :] = dipole_xn[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_yp[ik, ib1, ib2, :] = dipole_yp[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_yn[ik, ib1, ib2, :] = dipole_yn[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_zp[ik, ib1, ib2, :] = dipole_zp[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+                newE_zn[ik, ib1, ib2, :] = dipole_zn[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+
+    dipole_0_2 = newE_0[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_xp_2 = newE_xp[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_xn_2 = newE_xn[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_yp_2 = newE_yp[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_yn_2 = newE_yn[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_zp_2 = newE_zp[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+    dipole_zn_2 = newE_zn[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+
+    avck_0 = main_class.avck[0*nk_sub:1*nk_sub,:,:,:]   #kvcs
+    avck_xp = main_class.avck[1 * nk_sub:2 * nk_sub, :, :, :]
+    avck_xn = main_class.avck[2 * nk_sub:3 * nk_sub, :, :, :]
+    avck_yp = main_class.avck[3 * nk_sub:4 * nk_sub, :, :, :]
+    avck_yn = main_class.avck[4 * nk_sub:5 * nk_sub, :, :, :]
+    avck_zp = main_class.avck[5 * nk_sub:6 * nk_sub, :, :, :]
+    avck_zn = main_class.avck[6 * nk_sub:7 * nk_sub, :, :, :]
+
+    # dipole_0_2 =np.zeros_like(dipole_0)
+    # dipole_xp_2 = np.zeros_like(dipole_xp)
+    # dipole_xn_2 = np.zeros_like(dipole_xn)
+    # dipole_yp_2 = np.zeros_like(dipole_yp)
+    # dipole_yn_2 = np.zeros_like(dipole_yn)
+    # dipole_zp_2 = np.zeros_like(dipole_zp)
+    # dipole_zn_2 = np.zeros_like(dipole_zn)
+    #
+    #
+    # energy = main_class.energy_dft
+    #
+    # for ik in range(nk_sub):
+    #     for ib1 in range(main_class.nv + main_class.nc):
+    #         for ib2 in range(main_class.nv + main_class.nc):
+    #             energy_diff_for_cancel_diple = energy[ik, ib1] - energy[
+    #                 ik, ib2]
+    #             if np.abs(energy_diff_for_cancel_diple) > 0.0000001:
+    #                 energy_diff_for_cancel_diple_inv = 1 / energy_diff_for_cancel_diple
+    #             else:
+    #                 energy_diff_for_cancel_diple_inv = 0
+    #
+    #             newE[ik, ib1, ib2, :] = E[ik, ib1, ib2, :] * energy_diff_for_cancel_diple_inv
+    # main_class.E_kvc = newE[:, 0:main_class.nv, main_class.nv:main_class.nc + main_class.nv, :]
+
+    idx = list(range(main_class.nv - 1, -1, -1))
+    inds = np.ix_(range(nk_sub), idx, range(main_class.nc), range(3))
+    Ekvc_0 = dipole_0_2[inds]
+    Ekvc_xp = dipole_xp_2[inds]
+    Ekvc_xn = dipole_xn_2[inds]
+    Ekvc_yp = dipole_yp_2[inds]
+    Ekvc_yn = dipole_yn_2[inds]
+    Ekvc_zp = dipole_zp_2[inds]
+    Ekvc_zn = dipole_zn_2[inds]
+
+
+    ME_0 = np.einsum('kvcs,kvcd->sd', avck_0, Ekvc_0)
+    ME_xp = np.einsum('kvcs,kvcd->sd', avck_xp, Ekvc_xp)
+    ME_xn = np.einsum('kvcs,kvcd->sd', avck_xn, Ekvc_xn)
+    ME_yp = np.einsum('kvcs,kvcd->sd', avck_yp, Ekvc_yp)
+    ME_yn = np.einsum('kvcs,kvcd->sd', avck_yn, Ekvc_yn)
+    ME_zp = np.einsum('kvcs,kvcd->sd', avck_zp, Ekvc_zp)
+    ME_zn = np.einsum('kvcs,kvcd->sd', avck_zn, Ekvc_zn)
+
+    L_correction = np.zeros([main_class.nxct,3], dtype=np.complex128)
+
+    L_correction[:,0] = 1j * (ME_yp[:,2]-ME_yn[:,2])/ np.sqrt(bdot[1, 1]) / dk / 2 - 1j * (ME_zp[:,1]-ME_zn[:,1])/ np.sqrt(bdot[2, 2]) / dk / 2
+    L_correction[:,1] = 1j * (ME_zp[:, 0] - ME_zn[:, 0]) / np.sqrt(bdot[2, 2]) / dk / 2 - 1j * (ME_xp[:, 2] - ME_xn[:, 2]) / np.sqrt(bdot[0, 0]) / dk / 2
+    L_correction[:,2] = 1j * (ME_xp[:, 1] - ME_xn[:, 1]) / np.sqrt(bdot[0, 0]) / dk / 2 - 1j * (ME_yp[:, 0] - ME_yn[:, 0]) / np.sqrt(bdot[1, 1]) / dk / 2
+
+    main_class.L_correction = L_correction
+    print('test')
+
+

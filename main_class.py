@@ -41,5 +41,7 @@ class main_class:
         reader.reader(self)
         if self.length_gauge:
             length_gauge_mod.wfn_derivative(self)
+            length_gauge_mod.Avck_derivative2(self)
+            length_gauge_mod.Ddipole(self)
         electromagnetic.electromagnetic(self)
 
